@@ -70,29 +70,43 @@ class ChatHistory:
         )
         self.conn.commit()
     
-    def get_session_messages(self, session_id: int) -> List[Dict[str, str]]:
+    def get_session_messages(self, session_id: int, limit: Optional[int] = None) -> List[Dict[str, str]]:
         """
         Retrieve all messages for a session.
         
         Args:
             session_id: ID of the session
+            limit: Optional limit on number of recent messages to retrieve
             
         Returns:
             List of message dictionaries
         """
         cursor = self.conn.cursor()
-        cursor.execute(
-            "SELECT role, content, timestamp FROM messages WHERE session_id = ? ORDER BY timestamp",
-            (session_id,)
-        )
         
-        messages = []
-        for row in cursor.fetchall():
-            messages.append({
-                "role": row[0],
-                "content": row[1],
-                "timestamp": row[2]
-            })
+        if limit:
+            cursor.execute(
+                "SELECT role, content, timestamp FROM messages WHERE session_id = ? ORDER BY timestamp DESC LIMIT ?",
+                (session_id, limit)
+            )
+            messages = []
+            for row in reversed(cursor.fetchall()):
+                messages.append({
+                    "role": row[0],
+                    "content": row[1],
+                    "timestamp": row[2]
+                })
+        else:
+            cursor.execute(
+                "SELECT role, content, timestamp FROM messages WHERE session_id = ? ORDER BY timestamp",
+                (session_id,)
+            )
+            messages = []
+            for row in cursor.fetchall():
+                messages.append({
+                    "role": row[0],
+                    "content": row[1],
+                    "timestamp": row[2]
+                })
         
         return messages
     

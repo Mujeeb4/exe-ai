@@ -32,6 +32,7 @@ class VectorDB:
             chunks: List of CodeChunk objects
             embeddings: List of embedding vectors
         """
+        from datetime import datetime
         data = []
         for chunk, embedding in zip(chunks, embeddings):
             data.append({
@@ -42,6 +43,9 @@ class VectorDB:
                 "end_line": chunk.end_line,
                 "chunk_type": chunk.chunk_type,
                 "name": chunk.name or "",
+                "language": chunk.language or "unknown",
+                "imports": ",".join(chunk.imports or []),
+                "last_modified": chunk.last_modified or datetime.utcnow().isoformat(),
                 "vector": embedding
             })
         
@@ -50,14 +54,17 @@ class VectorDB:
         else:
             self.table.add(data)
     
-    def search(self, query_embedding: List[float], limit: int = 10, focus_path: Optional[str] = None) -> List[CodeChunk]:
+    def search(self, query_embedding: List[float], limit: int = 10, focus_path: Optional[str] = None, 
+               chunk_type: Optional[str] = None, language: Optional[str] = None) -> List[CodeChunk]:
         """
-        Search for similar code chunks.
+        Search for similar code chunks with optional metadata filtering.
         
         Args:
             query_embedding: Query vector
             limit: Maximum number of results
             focus_path: Optional path to filter results
+            chunk_type: Optional filter by chunk type ("function", "class", etc.)
+            language: Optional filter by language ("python", "javascript", etc.)
             
         Returns:
             List of relevant CodeChunk objects
@@ -70,6 +77,12 @@ class VectorDB:
         if focus_path:
             results = results.where(f"file_path LIKE '{focus_path}%'")
         
+        if chunk_type:
+            results = results.where(f"chunk_type = '{chunk_type}'")
+            
+        if language:
+            results = results.where(f"language = '{language}'")
+        
         chunks = []
         for row in results.to_list():
             chunks.append(CodeChunk(
@@ -79,7 +92,10 @@ class VectorDB:
                 start_line=row["start_line"],
                 end_line=row["end_line"],
                 chunk_type=row["chunk_type"],
-                name=row.get("name")
+                name=row.get("name"),
+                language=row.get("language"),
+                imports=row.get("imports", "").split(",") if row.get("imports") else None,
+                last_modified=row.get("last_modified")
             ))
         
         return chunks

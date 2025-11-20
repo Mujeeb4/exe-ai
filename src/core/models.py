@@ -11,6 +11,8 @@ class RouterOutput(BaseModel):
     intent: Literal["question", "code_edit", "refactor", "explain"]
     relevant_files: List[str]
     focus_area: Optional[str] = None
+    relevant_chunks: Optional[List['CodeChunk']] = None
+
 
 
 class CoderOutput(BaseModel):
@@ -29,3 +31,6 @@ class CodeChunk(BaseModel):
     end_line: int
     chunk_type: str  # "function", "class", "module"
     name: Optional[str] = None
+    language: Optional[str] = None  # "python", "javascript", etc.
+    imports: Optional[List[str]] = None  # List of imported modules
+    last_modified: Optional[str] = None  # Timestamp for recency scoring

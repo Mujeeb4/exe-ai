@@ -59,14 +59,16 @@ def start_repl(config: ExeConfig, db: VectorDB):
             
             # Route query
             console.print("[dim]Thinking...[/dim]")
-            router_output = router.route(user_input, db)
+            router_output = router.route(user_input, db, embedder)
             
             # Get relevant chunks
-            query_embedding = embedder.embed_single(user_input)
-            chunks = db.search(query_embedding, focus_path=config.focus_path)
+            chunks = router_output.relevant_chunks or []
+            
+            # Retrieve recent conversation context
+            conversation_history = history.get_session_messages(session_id, limit=6)
             
             # Generate response
-            coder_output = coder.process(user_input, router_output, chunks)
+            coder_output = coder.process(user_input, router_output, chunks, conversation_history)
             
             # Display response
             console.print("\n[bold green]Exe:[/bold green]")

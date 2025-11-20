@@ -67,6 +67,7 @@ class Editor:
         try:
             patch_lines = patch_content.splitlines()
             result = original_lines.copy()
+            offset = 0
             
             # Parse diff hunks
             i = 0
@@ -80,7 +81,7 @@ class Editor:
                     
                     # Apply hunk
                     i += 1
-                    line_num = old_start - 1
+                    line_num = old_start - 1 + offset
                     
                     while i < len(patch_lines) and not patch_lines[i].startswith('@@'):
                         diff_line = patch_lines[i]
@@ -89,10 +90,16 @@ class Editor:
                             # Remove line
                             if line_num < len(result):
                                 result.pop(line_num)
+                                offset -= 1
                         elif diff_line.startswith('+'):
                             # Add line
-                            result.insert(line_num, diff_line[1:] + '\n')
+                            # Ensure newline if missing
+                            content = diff_line[1:]
+                            if not content.endswith('\n'):
+                                content += '\n'
+                            result.insert(line_num, content)
                             line_num += 1
+                            offset += 1
                         else:
                             # Context line
                             line_num += 1
