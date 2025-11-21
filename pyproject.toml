@@ -20,7 +20,8 @@ dependencies = [
     "lancedb>=0.3.0",
     "watchdog>=3.0.0",
     "pathspec>=0.11.0",
-    "openai>=1.0.0",
+    "google-adk>=0.1.0",
+    "google-cloud-aiplatform>=1.73.0",
     "pydantic>=2.0.0",
 ]
 

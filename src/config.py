@@ -14,8 +14,19 @@ class ExeConfig(BaseModel):
     """Configuration model for Exe."""
     api_key: str
     auto_apply: bool = False
-    model: str = "gpt-4"
+    router_model: str = "gemini-1.5-flash-8b"  # Fast model for intent classification
+    coder_model: str = "gemini-2.0-flash-exp"   # Advanced model for code generation
     focus_path: Optional[str] = None
+    
+    # Deprecated: kept for backward compatibility
+    model: Optional[str] = None
+    
+    def model_post_init(self, __context) -> None:
+        """Handle backward compatibility with old 'model' field."""
+        if self.model and not self.coder_model:
+            self.coder_model = self.model
+        if self.model and not self.router_model:
+            self.router_model = self.model
 
 
 class ConfigManager:

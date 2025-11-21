@@ -101,5 +101,6 @@ def test_config_defaults():
     config = ExeConfig(api_key="test-key")
     
     assert config.auto_apply == False
-    assert config.model == "gpt-4"
+    assert config.router_model == "gemini-1.5-flash-8b"
+    assert config.coder_model == "gemini-2.0-flash-exp"
     assert config.focus_path is None

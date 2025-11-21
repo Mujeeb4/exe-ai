@@ -32,7 +32,7 @@ class VectorDB:
             chunks: List of CodeChunk objects
             embeddings: List of embedding vectors
         """
-        from datetime import datetime
+        from datetime import datetime, UTC
         data = []
         for chunk, embedding in zip(chunks, embeddings):
             data.append({
@@ -45,7 +45,7 @@ class VectorDB:
                 "name": chunk.name or "",
                 "language": chunk.language or "unknown",
                 "imports": ",".join(chunk.imports or []),
-                "last_modified": chunk.last_modified or datetime.utcnow().isoformat(),
+                "last_modified": chunk.last_modified or datetime.now(UTC).isoformat(),
                 "vector": embedding
             })
         
@@ -85,6 +85,33 @@ class VectorDB:
         
         chunks = []
         for row in results.to_list():
+            chunks.append(CodeChunk(
+                file_path=row["file_path"],
+                chunk_id=row["chunk_id"],
+                content=row["content"],
+                start_line=row["start_line"],
+                end_line=row["end_line"],
+                chunk_type=row["chunk_type"],
+                name=row.get("name"),
+                language=row.get("language"),
+                imports=row.get("imports", "").split(",") if row.get("imports") else None,
+                last_modified=row.get("last_modified")
+            ))
+        
+        return chunks
+    
+    def get_all_chunks(self) -> List[CodeChunk]:
+        """
+        Retrieve all chunks from the database.
+        
+        Returns:
+            List of all CodeChunk objects
+        """
+        if self.table is None:
+            return []
+        
+        chunks = []
+        for row in self.table.to_pandas().to_dict('records'):
             chunks.append(CodeChunk(
                 file_path=row["file_path"],
                 chunk_id=row["chunk_id"],

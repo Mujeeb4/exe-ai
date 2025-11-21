@@ -3,6 +3,7 @@ Interactive REPL (Read-Eval-Print Loop) for Exo.
 """
 
 from pathlib import Path
+from typing import Optional
 from rich.markdown import Markdown
 from rich.syntax import Syntax
 from .console import console
@@ -16,20 +17,21 @@ from ..ingestion.editor import Editor
 from ..ingestion.watcher import FileWatcher
 
 
-def start_repl(config: ExeConfig, db: VectorDB):
+def start_repl(config: ExeConfig, db: VectorDB, repo_context: Optional[str] = None):
     """
     Start the interactive REPL.
     
     Args:
         config: Exe configuration
         db: Vector database instance
+        repo_context: Complete repository context string
     """
     console.print("[bold green]Exe is ready![/bold green] Type 'exit' to quit.\n")
     
-    # Initialize components
+    # Initialize components with repository context
     embedder = Embedder(config.api_key)
-    router = Router(config.api_key, config.focus_path)
-    coder = Coder(config.api_key)
+    router = Router(config.api_key, config.focus_path, repo_context, model=config.router_model)
+    coder = Coder(config.api_key, repo_context, model=config.coder_model)
     editor = Editor()
     history = ChatHistory()
     

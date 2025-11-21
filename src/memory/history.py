@@ -4,7 +4,7 @@ SQLite wrapper for chat history persistence.
 
 import sqlite3
 from pathlib import Path
-from typing import List, Dict
+from typing import List, Dict, Optional
 from datetime import datetime
 
 

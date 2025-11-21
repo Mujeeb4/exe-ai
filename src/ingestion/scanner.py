@@ -3,11 +3,12 @@ Directory walker for codebase indexing.
 """
 
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 import pathspec
 from ..memory.db import VectorDB
 from ..memory.chunker import PythonChunker, UniversalChunker
 from ..memory.embedder import Embedder
+from ..memory.repo_context import RepositoryContext
 
 
 class Scanner:
@@ -41,7 +42,8 @@ class Scanner:
         
         return pathspec.PathSpec.from_lines('gitwildmatch', patterns)
     
-    def scan_and_index(self, root_path: Path, db: VectorDB, embedder: Embedder):
+    def scan_and_index(self, root_path: Path, db: VectorDB, embedder: Embedder, 
+                      build_repo_context: bool = True) -> Optional[str]:
         """
         Scan a directory and index all code files.
         
@@ -49,6 +51,10 @@ class Scanner:
             root_path: Root directory to scan
             db: Vector database instance
             embedder: Embedder instance
+            build_repo_context: Whether to build repository context
+            
+        Returns:
+            Repository context string if build_repo_context=True
         """
         code_files = self._find_files(root_path)
         
@@ -67,6 +73,15 @@ class Scanner:
                 
                 # Store in database
                 db.add_chunks(chunks, embeddings)
+        
+        # Build repository context
+        if build_repo_context:
+            repo_context = RepositoryContext()
+            all_chunks = db.get_all_chunks()
+            context_str = repo_context.build_context(root_path, all_chunks)
+            return context_str
+        
+        return None
     
     def _find_files(self, root_path: Path) -> List[Path]:
         """Find all supported code files in a directory."""

@@ -3,7 +3,8 @@ Coder Agent: High-level intelligence.
 Generates answers or unified diffs for code modifications.
 """
 
-import openai
+from google import genai
+from google.genai import types
 from typing import List, Optional, Dict
 from .models import CoderOutput, RouterOutput, CodeChunk
 
@@ -11,8 +12,11 @@ from .models import CoderOutput, RouterOutput, CodeChunk
 class Coder:
     """Generates intelligent responses and code patches."""
     
-    def __init__(self, api_key: str):
-        self.client = openai.OpenAI(api_key=api_key)
+    def __init__(self, api_key: str, repo_context: Optional[str] = None, 
+                 model: str = "gemini-2.0-flash-exp"):
+        self.client = genai.Client(api_key=api_key)
+        self.repo_context = repo_context
+        self.model = model
     
     def process(self, query: str, router_output: RouterOutput, chunks: List[CodeChunk], 
                 conversation_history: Optional[List[Dict[str, str]]] = None) -> CoderOutput:
@@ -54,19 +58,18 @@ Never output full file content. Use this format:
 +added line
  unchanged line"""
             
-            from openai.types.chat import ChatCompletionSystemMessageParam, ChatCompletionUserMessageParam
+            if self.repo_context:
+                system_prompt += f"\n\nRepository Overview:\n{self.repo_context}"
             
-            messages: list[ChatCompletionSystemMessageParam | ChatCompletionUserMessageParam] = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Context:\n{context}{conversation_context}\n\nTask: {query}"}
-            ]
+            prompt = f"{system_prompt}\n\nContext:\n{context}{conversation_context}\n\nTask: {query}"
             
-            response = self.client.chat.completions.create(
-                model="gpt-4o",
-                messages=messages
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=prompt,
+                config=types.GenerateContentConfig(temperature=0.7)
             )
             
-            patch_content = response.choices[0].message.content or ""
+            patch_content = response.text or ""
             
             # Strip markdown code blocks if present
             if patch_content.startswith("```diff"):
@@ -81,19 +84,19 @@ Never output full file content. Use this format:
             )
         else:
             # Generate natural language answer
-            from openai.types.chat import ChatCompletionSystemMessageParam, ChatCompletionUserMessageParam
+            system_content = "You are a helpful coding assistant. Provide clear, concise answers."
+            if self.repo_context:
+                system_content += f"\n\nRepository Overview:\n{self.repo_context}"
             
-            messages: list[ChatCompletionSystemMessageParam | ChatCompletionUserMessageParam] = [
-                {"role": "system", "content": "You are a helpful coding assistant. Provide clear, concise answers."},
-                {"role": "user", "content": f"Context:\n{context}{conversation_context}\n\nQuestion: {query}"}
-            ]
+            prompt = f"{system_content}\n\nContext:\n{context}{conversation_context}\n\nQuestion: {query}"
             
-            response = self.client.chat.completions.create(
-                model="gpt-4o",
-                messages=messages
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=prompt,
+                config=types.GenerateContentConfig(temperature=0.7)
             )
             
             return CoderOutput(
                 type="answer",
-                content=response.choices[0].message.content or "No response generated."
+                content=response.text or "No response generated."
             )

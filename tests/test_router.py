@@ -17,17 +17,19 @@ def mock_embedder():
     return embedder
 
 @pytest.fixture
-def mock_openai():
-    with patch('src.core.router.openai.OpenAI') as mock:
-        client = mock.return_value
-        client.chat.completions.create.return_value.choices[0].message.content = '{"intent": "question"}'
+def mock_genai():
+    with patch('src.core.router.genai.Client') as mock:
+        # Create a proper mock response object
+        mock_response = MagicMock()
+        mock_response.text = '{"intent": "question"}'
+        mock.return_value.models.generate_content.return_value = mock_response
         yield mock
 
-def test_router_initialization(mock_openai):
+def test_router_initialization(mock_genai):
     router = Router(api_key="test_key", focus_path="src/utils")
     assert router.focus_path == "src/utils"
 
-def test_router_route_respects_focus_path(mock_db, mock_embedder, mock_openai):
+def test_router_route_respects_focus_path(mock_db, mock_embedder, mock_genai):
     # Setup
     router = Router(api_key="test_key", focus_path="src/utils")
     
@@ -58,7 +60,7 @@ def test_router_route_respects_focus_path(mock_db, mock_embedder, mock_openai):
     assert output.focus_area == "src/utils"
     assert output.relevant_chunks == [mock_chunk]
 
-def test_router_route_no_focus_path(mock_db, mock_embedder, mock_openai):
+def test_router_route_no_focus_path(mock_db, mock_embedder, mock_genai):
     # Setup
     router = Router(api_key="test_key")
     
