@@ -344,25 +344,70 @@ def test_no_infinite_loop_integration(tmp_path, mock_db, mock_embedder):
 +    return 'universe'
 """
     
-    # Apply patch (this sets is_modifying = True)
-    success = editor.apply_patch(test_file, patch_content)
-    assert success
-    
-    # Simulate watcher event during modification
+    # Simulate watcher event DURING modification (the race condition we're preventing)
+    # We need to manually set is_modifying and trigger the event
     event = Mock()
     event.is_directory = False
     event.src_path = str(test_file)
     
-    # This should be ignored because editor.is_modifying was True during the patch
+    # Set flag to simulate modification in progress
+    editor.is_modifying = True
+    
+    # This should be ignored because editor.is_modifying is True
     handler.on_modified(event)
     
     # Database update should not be called (event was ignored)
     mock_db.update_file.assert_not_called()
     
+    # Reset flag
+    editor.is_modifying = False
+    
     # Now simulate a normal file change (not from editor)
-    # is_modifying should be False now
+    # This should trigger the update
+    handler.on_modified(event)
+    
+    # Now the database should be updated
+    mock_db.update_file.assert_called_once()
+
+
+def test_real_world_patch_scenario(tmp_path, mock_db, mock_embedder):
+    """Test real-world scenario: apply patch and verify cooldown prevents rapid re-indexing."""
+    editor = Editor()
+    handler = CodeFileHandler(mock_db, mock_embedder, editor, cooldown_seconds=0.5)
+    
+    test_file = tmp_path / "test.py"
+    test_file.write_text("def hello():\n    return 'world'\n")
+    
+    patch_content = """--- a/test.py
++++ b/test.py
+@@ -1,2 +1,2 @@
+ def hello():
+-    return 'world'
++    return 'universe'
+"""
+    
+    # Apply patch
+    success = editor.apply_patch(test_file, patch_content)
+    assert success
+    
+    # After patch completes, is_modifying should be False
     assert not editor.is_modifying
     
+    # File system watcher would detect the change after the write completes
+    # The cooldown mechanism prevents rapid re-indexing
+    event = Mock()
+    event.is_directory = False
+    event.src_path = str(test_file)
+    
+    # First event triggers update
+    handler.on_modified(event)
+    mock_db.update_file.assert_called_once()
+    
+    # Second event within cooldown period is ignored
+    handler.on_modified(event)
+    # Still only called once (second event was debounced)
+    assert mock_db.update_file.call_count == 1
+
     mock_chunk = CodeChunk(
         file_path=str(test_file),
         chunk_id="test",
