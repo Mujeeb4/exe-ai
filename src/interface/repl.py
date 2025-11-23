@@ -7,20 +7,57 @@ from pathlib import Path
 from typing import Optional, List, Dict
 from datetime import datetime
 import shutil
+import re
 from rich.markdown import Markdown
 from rich.syntax import Syntax
 from rich.table import Table
 from rich.panel import Panel
+from rich.text import Text
 from .console import console
 from ..config import ExeConfig, ConfigManager
 from ..memory.db import VectorDB
 from ..memory.history import ChatHistory
 from ..memory.embedder import Embedder
-from ..core.router import Router
-from ..core.coder import Coder
+from ..core.adk_adapters import RouterAdapter, CoderAdapter
 from ..ingestion.editor import Editor
 from ..ingestion.watcher import FileWatcher
 from ..session import session_state
+
+
+def format_diff_with_colors(diff_content: str) -> Text:
+    """
+    Format unified diff with color coding.
+    Green for additions (+), red for deletions (-), cyan for context.
+    
+    Args:
+        diff_content: Unified diff string
+        
+    Returns:
+        Rich Text object with colored diff
+    """
+    text = Text()
+    
+    for line in diff_content.split('\n'):
+        if line.startswith('+++') or line.startswith('---'):
+            # File headers in bold white
+            text.append(line + '\n', style="bold white")
+        elif line.startswith('@@'):
+            # Hunk headers in cyan
+            text.append(line + '\n', style="bold cyan")
+        elif line.startswith('+'):
+            # Additions in green
+            text.append(line + '\n', style="green")
+        elif line.startswith('-'):
+            # Deletions in red
+            text.append(line + '\n', style="red")
+        elif line.startswith(' '):
+            # Context lines in dim white
+            text.append(line + '\n', style="dim white")
+        else:
+            # Other lines (like diff headers)
+            text.append(line + '\n', style="white")
+    
+    return text
 
 
 class PatchBackup:
@@ -252,7 +289,7 @@ def handle_command(
     command: str,
     repl_session: ReplSession,
     config: ExeConfig,
-    router: Router,
+    router: RouterAdapter,
     history: ChatHistory,
     watcher: FileWatcher
 ) -> bool:
@@ -461,8 +498,8 @@ def start_repl(config: ExeConfig, db: VectorDB, repo_context: Optional[str] = No
     """
     # Initialize components
     embedder = Embedder(config.api_key)
-    router = Router(config.api_key, config.focus_path, repo_context, model=config.router_model)
-    coder = Coder(config.api_key, repo_context, model=config.coder_model)
+    router = RouterAdapter(config.api_key, config.focus_path, repo_context, model=config.router_model)
+    coder = CoderAdapter(config.api_key, repo_context, model=config.coder_model)
     editor = Editor()
     history = ChatHistory()
     
@@ -539,9 +576,9 @@ def start_repl(config: ExeConfig, db: VectorDB, repo_context: Optional[str] = No
                     console.print(Markdown(coder_output.content))
                 
                 elif coder_output.type == "patch":
-                    # Display diff with syntax highlighting
-                    syntax = Syntax(coder_output.content, "diff", theme="monokai", line_numbers=True)
-                    console.print(Panel(syntax, title="[bold]Proposed Changes[/bold]", border_style="yellow"))
+                    # Display diff with rich color formatting
+                    formatted_diff = format_diff_with_colors(coder_output.content)
+                    console.print(Panel(formatted_diff, title="[bold]Proposed Changes[/bold]", border_style="yellow"))
                     
                     # Extract file paths from patch
                     files_to_modify = extract_file_paths_from_patch(coder_output.content)
@@ -560,15 +597,16 @@ def start_repl(config: ExeConfig, db: VectorDB, repo_context: Optional[str] = No
                         fail_count = 0
                         backup_ids = []
                         modified_files = []
+                        failed_files = []
                         
                         # Apply patch to files
                         for file_path in files_to_modify:
                             # Create backup before patching
                             backup_id = repl_session.backup_manager.create_backup(Path(file_path))
                             
-                            success = editor.apply_patch(Path(file_path), coder_output.content)
+                            result = editor.apply_patch_with_details(Path(file_path), coder_output.content)
                             
-                            if success:
+                            if result["success"]:
                                 console.print(f"[green]✓ Patched:[/green] {file_path}")
                                 repl_session.record_patch(file_path)
                                 modified_files.append(file_path)
@@ -576,7 +614,10 @@ def start_repl(config: ExeConfig, db: VectorDB, repo_context: Optional[str] = No
                                     backup_ids.append(backup_id)
                                 success_count += 1
                             else:
+                                error_msg = result.get("error", "Unknown error")
                                 console.print(f"[red]✗ Failed to patch:[/red] {file_path}")
+                                console.print(f"[dim]  Reason: {error_msg}[/dim]")
+                                failed_files.append((file_path, error_msg))
                                 fail_count += 1
                         
                         # Record patch batch for undo
@@ -588,7 +629,11 @@ def start_repl(config: ExeConfig, db: VectorDB, repo_context: Optional[str] = No
                             console.print(f"\n[green]✓ Successfully patched {success_count} file(s)[/green]")
                             console.print(f"[dim]💾 Backups created ({len(backup_ids)} files) - use /undo to revert[/dim]")
                         if fail_count > 0:
-                            console.print(f"[red]✗ Failed to patch {fail_count} file(s)[/red]")
+                            console.print(f"\n[red]✗ Failed to patch {fail_count} file(s)[/red]")
+                            console.print("\n[yellow]Failure details:[/yellow]")
+                            for file_path, error_msg in failed_files:
+                                console.print(f"  [red]•[/red] {file_path}: {error_msg}")
+                            console.print("\n[dim]💡 Tip: File may have been modified externally. Try regenerating the patch.[/dim]")
                     else:
                         console.print("[dim]Patch not applied[/dim]")
                 

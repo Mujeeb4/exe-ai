@@ -3,8 +3,9 @@ Handles safe patching of files using unified diffs.
 """
 
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict
 import difflib
+import hashlib
 from contextlib import contextmanager
 
 
@@ -36,39 +37,53 @@ class Editor:
         Returns:
             True if patch applied successfully, False otherwise
         """
+        result = self.apply_patch_with_details(file_path, patch_content)
+        return result["success"]
+    
+    def apply_patch_with_details(self, file_path: Path, patch_content: str) -> Dict:
+        """
+        Apply a unified diff patch to a file with detailed error information.
+        
+        Args:
+            file_path: Path to the file to patch
+            patch_content: Unified diff content
+            
+        Returns:
+            Dict with 'success' (bool) and optional 'error' (str) keys
+        """
         with self.modify_context():
             try:
                 # Verify file exists
                 if not file_path.exists():
-                    print(f"✗ File not found: {file_path}")
-                    return False
+                    return {"success": False, "error": "File not found"}
                 
                 # Read current file content
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    original_lines = f.readlines()
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        original_lines = f.readlines()
+                except UnicodeDecodeError:
+                    return {"success": False, "error": "File encoding error (not UTF-8)"}
+                
+                # Calculate file hash to detect external modifications
+                original_hash = hashlib.md5(''.join(original_lines).encode()).hexdigest()
                 
                 # Parse and apply patch
                 patched_lines = self._apply_diff(original_lines, patch_content)
                 
                 if patched_lines is None:
-                    print(f"✗ Failed to apply patch to {file_path}")
-                    return False
+                    return {"success": False, "error": "Patch does not apply cleanly (file may have changed)"}
                 
                 # Write patched content
-                with open(file_path, 'w', encoding='utf-8') as f:
-                    f.writelines(patched_lines)
+                try:
+                    with open(file_path, 'w', encoding='utf-8') as f:
+                        f.writelines(patched_lines)
+                except PermissionError:
+                    return {"success": False, "error": "Permission denied (file may be read-only)"}
                 
-                return True
+                return {"success": True}
             
-            except UnicodeDecodeError as e:
-                print(f"✗ Encoding error in {file_path}: {e}")
-                return False
-            except PermissionError as e:
-                print(f"✗ Permission denied for {file_path}: {e}")
-                return False
             except Exception as e:
-                print(f"✗ Error applying patch to {file_path}: {e}")
-                return False
+                return {"success": False, "error": f"Unexpected error: {str(e)}"}
     
     def _apply_diff(self, original_lines: list, patch_content: str) -> Optional[list]:
         """

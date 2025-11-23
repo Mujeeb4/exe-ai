@@ -84,7 +84,7 @@ Your output will be used to route the query to the appropriate handler."""
         model=ModelFactory.create_model(model),
         description="Classifies user intent into: question, code_edit, refactor, or explain",
         instruction=instruction,
-        output_schema=RouterOutput.model_json_schema(),
+        output_schema=RouterOutput,  # Pass the Pydantic class directly
         output_key="router_decision",  # Store decision in session state
         generate_content_config=types.GenerateContentConfig(
             temperature=0.2,  # Low temperature for consistent classification
