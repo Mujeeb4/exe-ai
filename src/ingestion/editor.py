@@ -5,13 +5,25 @@ Handles safe patching of files using unified diffs.
 from pathlib import Path
 from typing import Optional
 import difflib
+from contextlib import contextmanager
 
 
 class Editor:
-    """Applies unified diff patches to files safely."""
+    """Applies unified diff patches to files safely with loop prevention."""
     
     def __init__(self):
         self.is_modifying = False  # Flag for watcher loop prevention
+        self._modification_count = 0
+    
+    @contextmanager
+    def modify_context(self):
+        """Context manager for safe file modifications with loop prevention."""
+        self.is_modifying = True
+        self._modification_count += 1
+        try:
+            yield
+        finally:
+            self.is_modifying = False
     
     def apply_patch(self, file_path: Path, patch_content: str) -> bool:
         """
@@ -24,31 +36,39 @@ class Editor:
         Returns:
             True if patch applied successfully, False otherwise
         """
-        self.is_modifying = True
-        
-        try:
-            # Read current file content
-            with open(file_path, 'r', encoding='utf-8') as f:
-                original_lines = f.readlines()
+        with self.modify_context():
+            try:
+                # Verify file exists
+                if not file_path.exists():
+                    print(f"✗ File not found: {file_path}")
+                    return False
+                
+                # Read current file content
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    original_lines = f.readlines()
+                
+                # Parse and apply patch
+                patched_lines = self._apply_diff(original_lines, patch_content)
+                
+                if patched_lines is None:
+                    print(f"✗ Failed to apply patch to {file_path}")
+                    return False
+                
+                # Write patched content
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.writelines(patched_lines)
+                
+                return True
             
-            # Parse and apply patch
-            patched_lines = self._apply_diff(original_lines, patch_content)
-            
-            if patched_lines is None:
+            except UnicodeDecodeError as e:
+                print(f"✗ Encoding error in {file_path}: {e}")
                 return False
-            
-            # Write patched content
-            with open(file_path, 'w', encoding='utf-8') as f:
-                f.writelines(patched_lines)
-            
-            return True
-        
-        except Exception as e:
-            print(f"Error applying patch: {e}")
-            return False
-        
-        finally:
-            self.is_modifying = False
+            except PermissionError as e:
+                print(f"✗ Permission denied for {file_path}: {e}")
+                return False
+            except Exception as e:
+                print(f"✗ Error applying patch to {file_path}: {e}")
+                return False
     
     def _apply_diff(self, original_lines: list, patch_content: str) -> Optional[list]:
         """
@@ -61,55 +81,87 @@ class Editor:
         Returns:
             Patched lines or None if patch fails
         """
-        # Simple implementation: parse unified diff format
-        # This is a basic version - production would use a robust library
-        
         try:
+            # Clean patch content
+            patch_content = patch_content.strip()
+            if not patch_content:
+                return None
+            
             patch_lines = patch_content.splitlines()
             result = original_lines.copy()
             offset = 0
+            hunks_applied = 0
             
             # Parse diff hunks
             i = 0
             while i < len(patch_lines):
                 line = patch_lines[i]
                 
+                # Skip header lines (---, +++, diff, index)
+                if line.startswith('---') or line.startswith('+++') or \
+                   line.startswith('diff') or line.startswith('index'):
+                    i += 1
+                    continue
+                
                 if line.startswith('@@'):
                     # Parse hunk header: @@ -start,count +start,count @@
-                    parts = line.split()
-                    old_start = int(parts[1].split(',')[0][1:])
-                    
-                    # Apply hunk
-                    i += 1
-                    line_num = old_start - 1 + offset
-                    
-                    while i < len(patch_lines) and not patch_lines[i].startswith('@@'):
-                        diff_line = patch_lines[i]
+                    try:
+                        parts = line.split()
+                        if len(parts) < 3:
+                            print(f"⚠ Malformed hunk header: {line}")
+                            i += 1
+                            continue
                         
-                        if diff_line.startswith('-'):
-                            # Remove line
-                            if line_num < len(result):
-                                result.pop(line_num)
-                                offset -= 1
-                        elif diff_line.startswith('+'):
-                            # Add line
-                            # Ensure newline if missing
-                            content = diff_line[1:]
-                            if not content.endswith('\n'):
-                                content += '\n'
-                            result.insert(line_num, content)
-                            line_num += 1
-                            offset += 1
-                        else:
-                            # Context line
-                            line_num += 1
+                        old_info = parts[1]
+                        old_start = int(old_info.split(',')[0][1:])
                         
+                        # Apply hunk
                         i += 1
+                        line_num = old_start - 1 + offset
+                        
+                        while i < len(patch_lines) and not patch_lines[i].startswith('@@'):
+                            diff_line = patch_lines[i]
+                            
+                            if diff_line.startswith('-'):
+                                # Remove line
+                                if line_num < len(result):
+                                    result.pop(line_num)
+                                    offset -= 1
+                                else:
+                                    print(f"⚠ Line {line_num} out of range during removal")
+                            elif diff_line.startswith('+'):
+                                # Add line
+                                content = diff_line[1:]
+                                if not content.endswith('\n'):
+                                    content += '\n'
+                                result.insert(line_num, content)
+                                line_num += 1
+                                offset += 1
+                            elif diff_line.startswith(' '):
+                                # Context line
+                                line_num += 1
+                            # Ignore other lines (e.g., \\ No newline at end of file)
+                            
+                            i += 1
+                        
+                        hunks_applied += 1
+                    except (ValueError, IndexError) as e:
+                        print(f"⚠ Error parsing hunk at line {i}: {e}")
+                        i += 1
+                        continue
                 else:
                     i += 1
+            
+            if hunks_applied == 0:
+                print("⚠ No valid hunks found in patch")
+                return None
             
             return result
         
         except Exception as e:
-            print(f"Failed to parse diff: {e}")
+            print(f"✗ Failed to parse diff: {e}")
             return None
+    
+    def get_modification_count(self) -> int:
+        """Get the total number of modifications made by this editor."""
+        return self._modification_count

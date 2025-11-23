@@ -26,17 +26,26 @@ class ModelSelector:
         """
         try:
             models = []
-            model_list = self.client.models.list()
             
-            for model in model_list:
-                # Filter for generative models that support generateContent
-                if hasattr(model, 'supported_generation_methods'):
-                    if 'generateContent' in model.supported_generation_methods:
-                        models.append({
-                            'name': model.name,
-                            'display_name': getattr(model, 'display_name', model.name),
-                            'description': getattr(model, 'description', 'No description available')
-                        })
+            # Add default models first (includes OpenAI/Anthropic)
+            defaults = self._get_default_models()
+            models.extend(defaults)
+            
+            # Try to fetch dynamic Gemini models
+            try:
+                model_list = self.client.models.list()
+                for model in model_list:
+                    if hasattr(model, 'supported_generation_methods'):
+                        if 'generateContent' in model.supported_generation_methods:
+                            # Check if already in defaults to avoid duplicates
+                            if not any(m['name'] == model.name for m in models):
+                                models.append({
+                                    'name': model.name,
+                                    'display_name': getattr(model, 'display_name', model.name),
+                                    'description': getattr(model, 'description', 'No description available')
+                                })
+            except Exception as e:
+                console.print(f"[yellow]Warning: Could not fetch dynamic Gemini models: {e}[/yellow]")
             
             return models
         except Exception as e:
@@ -58,19 +67,24 @@ class ModelSelector:
                 'description': 'Fast model optimized for speed'
             },
             {
-                'name': 'gemini-1.5-flash-8b',
-                'display_name': 'Gemini 1.5 Flash 8B',
-                'description': 'Smaller, faster model for simple tasks'
-            },
-            {
                 'name': 'gemini-1.5-pro',
                 'display_name': 'Gemini 1.5 Pro',
                 'description': 'Advanced model for complex reasoning'
             },
             {
-                'name': 'gemini-pro',
-                'display_name': 'Gemini Pro',
-                'description': 'General purpose model'
+                'name': 'gpt-4o',
+                'display_name': 'GPT-4o (OpenAI)',
+                'description': 'OpenAI flagship model'
+            },
+            {
+                'name': 'claude-3-5-sonnet-latest',
+                'display_name': 'Claude 3.5 Sonnet (Anthropic)',
+                'description': 'Anthropic most intelligent model'
+            },
+            {
+                'name': 'o1-preview',
+                'display_name': 'o1 Preview (OpenAI)',
+                'description': 'OpenAI reasoning model'
             }
         ]
     
