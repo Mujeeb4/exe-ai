@@ -6,6 +6,7 @@ These wrappers provide the same API as the simple Router/Coder classes.
 import asyncio
 from typing import List, Optional, Dict
 from google.adk.runners import InMemoryRunner
+from google.adk.sessions import InMemorySessionService
 from google.genai import types
 from .router_agent import create_router_agent, parse_router_output
 from .coder_agent import create_coder_agent
@@ -20,6 +21,26 @@ def _run_agent_sync(runner: InMemoryRunner, query: str, user_id: str = "default"
     Extracts the final response text from agent events.
     """
     async def _run():
+        # Ensure session exists before running
+        session_service = runner.session_service
+        try:
+            # Try to get existing session
+            session = await session_service.get_session(
+                app_name=runner.app_name,
+                user_id=user_id,
+                session_id=session_id
+            )
+        except Exception:
+            session = None
+        
+        # Create session if it doesn't exist
+        if session is None:
+            session = await session_service.create_session(
+                app_name=runner.app_name,
+                user_id=user_id,
+                session_id=session_id
+            )
+        
         content = types.Content(role='user', parts=[types.Part(text=query)])
         result_text = ""
         
@@ -38,6 +59,13 @@ def _run_agent_sync(runner: InMemoryRunner, query: str, user_id: str = "default"
     # Run the async function in the event loop
     try:
         loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # If we're already in an async context, create a new loop
+            import nest_asyncio
+            try:
+                nest_asyncio.apply()
+            except Exception:
+                pass
     except RuntimeError:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
