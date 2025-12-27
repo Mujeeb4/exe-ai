@@ -40,7 +40,6 @@ def init():
     models = selector.fetch_available_models()
     
     console.print(f"[green]Found {len(models)} available models[/green]")
-    console.print("[dim]Tip: Select 'Refresh from Google' to fetch the latest models dynamically.[/dim]")
     
     # Get recommendations
     recommendations = selector.get_recommended_models(models)
@@ -51,28 +50,96 @@ def init():
     
     console.print("\n[yellow]Options:[/yellow]")
     console.print("  1. Use recommended models")
-    console.print("  2. Choose custom models from list")
-    console.print("  3. Refresh models from Google (requires API key)")
+    console.print("  2. Choose from model list")
+    console.print("  3. Refresh live models from provider (requires API key)")
+    console.print("  4. Enter custom model name manually")
     
     try:
-        choice = console.input("\nSelect option (1-3): ")
+        choice = console.input("\nSelect option (1-4): ")
         choice = int(choice)
     except (ValueError, KeyboardInterrupt):
         choice = 1
     
     if choice == 3:
         # Refresh models from Google
-        console.print("\n[cyan]Fetching latest models from Google...[/cyan]")
-        console.print("[dim]This requires a Google API key to access the live model list.[/dim]")
+        console.print("\n[cyan]Fetching latest models from providers...[/cyan]")
+        console.print("[dim]Enter API keys for providers you want to fetch models from.[/dim]")
+        
         temp_api_key = typer.prompt("Enter Google API key (for fetching models)", hide_input=True)
         
-        selector = ModelSelector(api_key=temp_api_key)
-        models = selector.fetch_available_models()
-        console.print(f"[green]✓ Found {len(models)} models from Google![/green]")
+        from .utils.model_selector import fetch_google_models_live
+        live_models = fetch_google_models_live(temp_api_key)
         
-        # Now let them choose - update recommendations
+        if live_models:
+            models = live_models + [m for m in models if m['provider'] != 'google']
+            console.print(f"[green]✓ Found {len(live_models)} live Google models![/green]")
+        
+        # Update recommendations and fall through to selection
         recommendations = selector.get_recommended_models(models)
-        choice = 2  # Fall through to custom selection
+        choice = 2
+    
+    elif choice == 4:
+        # Manual model entry with validation
+        from .utils.model_selector import validate_model
+        
+        # Router model
+        router_model, router_provider = selector.enter_custom_model_interactive("router")
+        
+        # Coder model
+        coder_model, coder_provider = selector.enter_custom_model_interactive("coder")
+        
+        # Embedding - keep simple for now
+        embedding_model = "text-embedding-004"
+        embedding_provider = "google"
+        
+        console.print("\n[bold cyan]Step 2: API Keys[/bold cyan]")
+        required_providers = get_required_providers(router_model, coder_model, embedding_provider)
+        
+        api_keys = {}
+        for provider in sorted(required_providers):
+            console.print(f"\n[yellow]{get_provider_display_name(provider)} API Key[/yellow]")
+            key = typer.prompt(f"Enter {get_provider_display_name(provider)} API key", hide_input=True)
+            api_keys[f"{provider}_api_key"] = key
+            
+            # Validate the model with this key
+            if provider == router_provider:
+                valid, msg = validate_model(router_model, key, provider)
+                if valid:
+                    console.print(f"[green]✓[/green] Router model validated!")
+                else:
+                    console.print(f"[red]✗[/red] Router validation failed: {msg}")
+                    console.print("[yellow]Continuing anyway - you can update the model later with 'exe models'[/yellow]")
+            
+            if provider == coder_provider and coder_model != router_model:
+                valid, msg = validate_model(coder_model, key, provider)
+                if valid:
+                    console.print(f"[green]✓[/green] Coder model validated!")
+                else:
+                    console.print(f"[red]✗[/red] Coder validation failed: {msg}")
+                    console.print("[yellow]Continuing anyway - you can update the model later with 'exe models'[/yellow]")
+        
+        auto_apply = typer.confirm("\nEnable auto-apply mode? (skips confirmation prompts)", default=False)
+        
+        # Create and save config directly
+        config = ExeConfig(
+            router_model=router_model,
+            coder_model=coder_model,
+            embedding_model=embedding_model,
+            embedding_provider=embedding_provider,
+            auto_apply=auto_apply,
+            **api_keys
+        )
+        config_manager.save(config)
+        
+        console.print("\n[green]✓[/green] Exe initialized successfully!")
+        console.print(f"[dim]Config saved to: {config_manager.config_file}[/dim]")
+        console.print(f"\n[cyan]Configuration:[/cyan]")
+        console.print(f"  • Router Model: {router_model}")
+        console.print(f"  • Coder Model: {coder_model}")
+        console.print(f"  • Embedding: {embedding_model} ({embedding_provider})")
+        console.print(f"  • Auto-apply: {auto_apply}")
+        console.print("\n[dim]Run 'exe start' to begin![/dim]")
+        return
     
     if choice == 2:
         # Router model
