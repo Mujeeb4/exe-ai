@@ -38,9 +38,9 @@ class Embedder:
         if provider == "openai":
             self.client = openai.OpenAI(api_key=api_key)
         elif provider == "google":
-            import google.generativeai as genai
-            genai.configure(api_key=api_key)
-            self.genai = genai
+            # Use google-genai SDK (from google-adk)
+            from google import genai
+            self.client = genai.Client(api_key=api_key)
         else:
             raise ValueError(f"Unsupported embedding provider: {provider}")
     
@@ -73,15 +73,22 @@ class Embedder:
         return [item.embedding for item in response.data]
     
     def _embed_google(self, texts: List[str]) -> List[List[float]]:
-        """Generate embeddings using Google Generative AI."""
+        """Generate embeddings using Google Genai API."""
         embeddings = []
         for text in texts:
-            result = self.genai.embed_content(
-                model=f"models/{self.model}",
-                content=text,
-                task_type="retrieval_document"
+            # Use the google-genai client API
+            result = self.client.models.embed_content(
+                model=self.model,
+                contents=text
             )
-            embeddings.append(result['embedding'])
+            # Extract embedding from response
+            if hasattr(result, 'embeddings') and result.embeddings:
+                embeddings.append(list(result.embeddings[0].values))
+            elif hasattr(result, 'embedding'):
+                embeddings.append(list(result.embedding.values))
+            else:
+                # Fallback - try to access as dict
+                embeddings.append(result.get('embedding', []))
         return embeddings
     
     def embed_single(self, text: str) -> List[float]:
@@ -95,4 +102,3 @@ class Embedder:
             Embedding vector
         """
         return self.embed([text])[0]
-

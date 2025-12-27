@@ -75,12 +75,13 @@ def get_provider_display_name(provider: str) -> str:
 def validate_google_model(model_name: str, api_key: str) -> Tuple[bool, str]:
     """Validate Google model by making a test API call."""
     try:
-        import google.generativeai as genai
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(model_name)
+        from google import genai
+        client = genai.Client(api_key=api_key)
         # Quick test with minimal tokens
-        response = model.generate_content("Say OK", 
-            generation_config={"max_output_tokens": 5})
+        response = client.models.generate_content(
+            model=model_name,
+            contents="Say OK"
+        )
         return True, "Model validated successfully"
     except Exception as e:
         return False, str(e)
@@ -136,21 +137,22 @@ def validate_model(model_name: str, api_key: str, provider: str = None) -> Tuple
 
 
 def fetch_google_models_live(api_key: str) -> List[Dict[str, str]]:
-    """Fetch live models from Google Generative AI API."""
+    """Fetch live models from Google Genai API."""
     try:
-        import google.generativeai as genai
-        genai.configure(api_key=api_key)
+        from google import genai
+        client = genai.Client(api_key=api_key)
         
         models = []
-        for model in genai.list_models():
-            if hasattr(model, 'supported_generation_methods'):
-                if 'generateContent' in model.supported_generation_methods:
-                    models.append({
-                        'name': model.name.replace('models/', ''),
-                        'display_name': getattr(model, 'display_name', model.name),
-                        'description': getattr(model, 'description', '')[:80],
-                        'provider': 'google'
-                    })
+        for model in client.models.list():
+            # Filter to models that support generation
+            model_name = model.name if isinstance(model.name, str) else str(model.name)
+            if 'gemini' in model_name.lower():
+                models.append({
+                    'name': model_name.replace('models/', ''),
+                    'display_name': getattr(model, 'display_name', model_name),
+                    'description': getattr(model, 'description', '')[:80] if hasattr(model, 'description') else '',
+                    'provider': 'google'
+                })
         return models
     except Exception as e:
         console.print(f"[yellow]Could not fetch Google models: {e}[/yellow]")
