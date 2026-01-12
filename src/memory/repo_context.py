@@ -110,6 +110,81 @@ class RepositoryContext:
         
         return context_str
     
+    def build_lightweight_context(self, root_path: Path, chunks: List[CodeChunk]) -> str:
+        """
+        Build a minimal lightweight context to reduce token usage.
+        The agent should use tools (search_code, read_file) for detailed context.
+        
+        Args:
+            root_path: Root directory of the repository
+            chunks: All code chunks from the repository
+            
+        Returns:
+            Minimal context string with just overview statistics
+        """
+        # Organize chunks by file  
+        files_map: Dict[str, List[CodeChunk]] = {}
+        for chunk in chunks:
+            if chunk.file_path not in files_map:
+                files_map[chunk.file_path] = []
+            files_map[chunk.file_path].append(chunk)
+        
+        # Analyze codebase
+        stats = self._analyze_codebase(chunks)
+        
+        # Build top-level directory structure only
+        top_dirs = self._get_top_level_structure(list(files_map.keys()))
+        
+        # Create minimal context
+        context_parts = [
+            "# REPOSITORY OVERVIEW",
+            f"Root: {root_path.name}",
+            "",
+            "## STATISTICS",
+            f"- Files: {len(files_map)}",
+            f"- Functions: {stats['functions']}",
+            f"- Classes: {stats['classes']}",
+            f"- Languages: {', '.join(stats['languages']) or 'Python'}",
+            "",
+            "## TOP-LEVEL STRUCTURE",
+            top_dirs,
+            "",
+            "## HOW TO GET MORE CONTEXT",
+            "Use the search_code tool to find relevant code by semantic search.",
+            "Use the read_file tool to view specific file contents.",
+            "Use the list_files tool to explore directory contents.",
+        ]
+        
+        return "\n".join(context_parts)
+    
+    def _get_top_level_structure(self, file_paths: List[str]) -> str:
+        """Get only top-level directories and file counts."""
+        top_dirs: Dict[str, int] = {}
+        root_files: List[str] = []
+        
+        for path in file_paths:
+            p = Path(path)
+            parts = p.parts
+            
+            if len(parts) == 1:
+                # Root level file
+                root_files.append(parts[0])
+            else:
+                # Get top-level directory
+                top_dir = parts[0]
+                top_dirs[top_dir] = top_dirs.get(top_dir, 0) + 1
+        
+        lines = []
+        for dir_name in sorted(top_dirs.keys()):
+            lines.append(f"- {dir_name}/ ({top_dirs[dir_name]} files)")
+        
+        if root_files:
+            lines.append(f"- (root): {', '.join(sorted(root_files)[:5])}")
+            if len(root_files) > 5:
+                lines.append(f"  ... and {len(root_files) - 5} more")
+        
+        return "\n".join(lines) if lines else "No files found"
+    
     def _build_directory_tree(self, file_paths: List[str]) -> str:
         """Build a visual directory tree."""
         tree_lines = []

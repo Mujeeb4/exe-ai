@@ -43,7 +43,7 @@ class Scanner:
         return pathspec.PathSpec.from_lines('gitwildmatch', patterns)
     
     def scan_and_index(self, root_path: Path, db: VectorDB, embedder: Embedder, 
-                      build_repo_context: bool = True) -> Optional[str]:
+                      build_repo_context: bool = True, lightweight: bool = True) -> Optional[str]:
         """
         Scan a directory and index all code files.
         
@@ -52,6 +52,8 @@ class Scanner:
             db: Vector database instance
             embedder: Embedder instance
             build_repo_context: Whether to build repository context
+            lightweight: If True, build minimal context (default). 
+                        If False, build full context (uses more tokens).
             
         Returns:
             Repository context string if build_repo_context=True
@@ -78,7 +80,14 @@ class Scanner:
         if build_repo_context:
             repo_context = RepositoryContext()
             all_chunks = db.get_all_chunks()
-            context_str = repo_context.build_context(root_path, all_chunks)
+            
+            if lightweight:
+                # Use minimal context - agent uses tools for detailed info
+                context_str = repo_context.build_lightweight_context(root_path, all_chunks)
+            else:
+                # Full context (uses more tokens)
+                context_str = repo_context.build_context(root_path, all_chunks)
+            
             return context_str
         
         return None

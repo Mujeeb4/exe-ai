@@ -9,14 +9,14 @@ from typing import Dict, List, Optional
 import json
 
 
-def edit_file(file_path: str, patch_content: str, context: ToolContext) -> Dict[str, str]:
+def edit_file(file_path: str, patch_content: str, tool_context: ToolContext) -> Dict[str, str]:
     """
     Apply a unified diff patch to a file.
     
     Args:
         file_path: Relative path to the file to edit
         patch_content: Unified diff format patch content
-        context: ADK ToolContext for session state access
+        tool_context: ADK ToolContext for session state access
         
     Returns:
         Dict with status, message, and file path
@@ -24,8 +24,8 @@ def edit_file(file_path: str, patch_content: str, context: ToolContext) -> Dict[
     from ..ingestion.editor import Editor
     
     # Get session state for safety checks
-    focus_path = context.session.state.get("focus_path")
-    project_root = context.session.state.get("project_root", ".")
+    focus_path = tool_context.session.state.get("focus_path")
+    project_root = tool_context.session.state.get("project_root", ".")
     
     # Validate file is within focus if focus is set
     if focus_path and not file_path.startswith(focus_path):
@@ -51,10 +51,10 @@ def edit_file(file_path: str, patch_content: str, context: ToolContext) -> Dict[
     
     if success:
         # Update session state to track modified files
-        modified_files = context.session.state.get("modified_files", [])
+        modified_files = tool_context.session.state.get("modified_files", [])
         if file_path not in modified_files:
             modified_files.append(file_path)
-            context.session.state["modified_files"] = modified_files
+            tool_context.session.state["modified_files"] = modified_files
         
         return {
             "status": "success",
@@ -69,14 +69,14 @@ def edit_file(file_path: str, patch_content: str, context: ToolContext) -> Dict[
         }
 
 
-def search_code(query: str, limit: int = 10, context: ToolContext = None) -> Dict[str, List[Dict]]:
+def search_code(query: str, limit: int = 10, tool_context: ToolContext = None) -> Dict[str, List[Dict]]:
     """
     Search codebase using semantic similarity.
     
     Args:
         query: Search query
         limit: Maximum number of results
-        context: ADK ToolContext for session state access
+        tool_context: ADK ToolContext for session state access
         
     Returns:
         Dict with search results (file paths, content snippets, scores)
@@ -85,8 +85,8 @@ def search_code(query: str, limit: int = 10, context: ToolContext = None) -> Dic
     from ..memory.embedder import Embedder
     
     # Get session state
-    focus_path = context.session.state.get("focus_path") if context else None
-    api_key = context.session.state.get("api_key") if context else None
+    focus_path = tool_context.session.state.get("focus_path") if tool_context else None
+    api_key = tool_context.session.state.get("api_key") if tool_context else None
     
     # Initialize components
     embedder = Embedder(api_key)
@@ -118,20 +118,20 @@ def search_code(query: str, limit: int = 10, context: ToolContext = None) -> Dic
     }
 
 
-def list_files(directory: str = ".", pattern: str = "*.py", context: ToolContext = None) -> Dict[str, List[str]]:
+def list_files(directory: str = ".", pattern: str = "*.py", tool_context: ToolContext = None) -> Dict[str, List[str]]:
     """
     List files in a directory matching a pattern.
     
     Args:
         directory: Directory to search (relative to project root)
         pattern: Glob pattern for matching files
-        context: ADK ToolContext for session state access
+        tool_context: ADK ToolContext for session state access
         
     Returns:
         Dict with list of matching file paths
     """
-    project_root = context.session.state.get("project_root", ".") if context else "."
-    focus_path = context.session.state.get("focus_path") if context else None
+    project_root = tool_context.session.state.get("project_root", ".") if tool_context else "."
+    focus_path = tool_context.session.state.get("focus_path") if tool_context else None
     
     # Resolve directory
     search_dir = Path(project_root) / directory
@@ -166,7 +166,7 @@ def list_files(directory: str = ".", pattern: str = "*.py", context: ToolContext
 
 
 def read_file(file_path: str, start_line: Optional[int] = None, 
-              end_line: Optional[int] = None, context: ToolContext = None) -> Dict[str, str]:
+              end_line: Optional[int] = None, tool_context: ToolContext = None) -> Dict[str, str]:
     """
     Read contents of a file or specific line range.
     
@@ -174,13 +174,13 @@ def read_file(file_path: str, start_line: Optional[int] = None,
         file_path: Relative path to file
         start_line: Optional starting line number (1-indexed)
         end_line: Optional ending line number (1-indexed)
-        context: ADK ToolContext for session state access
+        tool_context: ADK ToolContext for session state access
         
     Returns:
         Dict with file contents and metadata
     """
-    project_root = context.session.state.get("project_root", ".") if context else "."
-    focus_path = context.session.state.get("focus_path") if context else None
+    project_root = tool_context.session.state.get("project_root", ".") if tool_context else "."
+    focus_path = tool_context.session.state.get("focus_path") if tool_context else None
     
     # Validate focus
     if focus_path and not file_path.startswith(focus_path):
@@ -229,18 +229,18 @@ def read_file(file_path: str, start_line: Optional[int] = None,
         }
 
 
-def get_focus_info(context: ToolContext) -> Dict[str, str]:
+def get_focus_info(tool_context: ToolContext) -> Dict[str, str]:
     """
     Get current focus path and statistics.
     
     Args:
-        context: ADK ToolContext for session state access
+        tool_context: ADK ToolContext for session state access
         
     Returns:
         Dict with focus information
     """
-    focus_path = context.session.state.get("focus_path")
-    modified_files = context.session.state.get("modified_files", [])
+    focus_path = tool_context.session.state.get("focus_path")
+    modified_files = tool_context.session.state.get("modified_files", [])
     
     return {
         "focus_path": focus_path or "Not set (searching entire codebase)",
